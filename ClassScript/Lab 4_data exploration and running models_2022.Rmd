@@ -1,0 +1,334 @@
+---
+title: "Lab 4_data exploration and model selection"
+author: "K Laskowski"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+## LAB FOUR ----------------
+
+Today we'll do some basic data exploration and model selection 
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE, message = F, results = 'hide', fig.show = 'hide')
+
+knitr::opts_chunk$set(echo = TRUE, message = F)
+```
+
+First we'll load some libraries
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(tidyverse)
+library(emmeans)
+
+#setwd("C:/Users/katel/Box Sync/EVE 225/Code")
+```
+
+
+### Difference between anova() and summary()
+
+The anova() is very dangerous if your data is at all unbalanced! This is because anova() uses Type I SS as default which are sequential and so the order in which you enter your predictors into your model will affect the estimate of the sums of squares and hence F-tests (and p-values). 
+
+You can see you slightly different answers between the anova tables of the models below. The only difference is the sequence in which you entered the different factors. 
+
+I actually strongly discourage you from ever using anova() on its own to test the significance of effects. We'll use log likelihood ratio tests instead which are more fool-proof
+
+```{r}
+clams <- read.table("../Data/Clams.txt", header = T)
+
+mod1 <- lm(AFD ~ LENGTH + factor(MONTH), data = clams)
+mod2 <- lm(AFD ~ factor(MONTH) + LENGTH, data = clams)
+
+anova(mod1)
+anova(mod2)
+
+```
+
+Luckily, the parameter estimates themselves are exactly the same, BUT whether or not you'd interpret them as having a significant effect (that is accounting for a significant portion of the variation will change) 
+
+```{r}
+summary(mod1)
+summary(mod2)
+```
+
+
+## MIXED MODELS
+
+Okay let's start with our first mixed model! This is the lake dataset that we've been talking about in class. 
+
+```{r}
+lakes <- read.csv("../Data/lakes.csv")
+
+head(lakes)
+str(lakes)
+
+table(lakes$Eutroph)
+
+
+```
+Here is the syntax for a mixed model in lmer. You just use (1|Random effect name). The 1 indicates that you want R to estimate an intercept for each level of the 'random effect name'. Later we'll add more stuff to the 1 when we want to add random slopes. 
+
+I generally always look at my residuals first to make sure my model isn't being wildly violated, but if you do any model reduction (removing terms), you'll need to do validation on the final model too
+
+What do you think about these residuals? Are they okay? Not okay? 
+
+```{r}
+mod1 <- lmer(Richness ~ factor(Eutroph)*Depth + (1|Lake), data = lakes)
+
+plot(mod1) #don't need to call the 1st plot like when you run an lm model 
+
+plot(resid(mod1) ~ lakes$Depth)
+boxplot(resid(mod1) ~ lakes$Eutroph)
+
+hist(resid(mod1))
+qqnorm(resid(mod1))
+qqline(resid(mod1))
+
+```
+
+
+### Random structure
+
+So the first thing would be to figure out the best random structure. You many have competing models in this regard IF you have lots of potential random effects (like that artificial light at night experiment we talked about). But for simple experimental designs you may just have one potential random structure. 
+
+So here is our first log likelihood ratio test where we are testing whether the include of lake as a random effect significantly improves the model!
+
+
+```{r}
+
+mod1 <- lmer(Richness ~ factor(Eutroph)*Depth + (1|Lake), data = lakes)
+
+ranova(mod1) # the test statistic here is the log likelihood ratio, again which we assume is ~Chi-sq distributed
+```
+
+### Fixed structure
+
+We know we want to keep the lake random effect regardless. Now we want to start testing our fixed effects. Here we want to make sure to fit with ML.
+
+Since this was a planned experiment, we know that this is the model we want to report. However, if the two-way interaction is NOT significant, then we are justified in removing it to be able to test (and report) the main effects of Depth and Eutroph
+
+
+
+```{r}
+mod1 <- lmer(Richness ~ factor(Eutroph)*Depth + (1|Lake), REML = F, data = lakes)
+
+drop1(mod1)
+
+```
+
+COOL CHECK FOR UNDERSTANDING:
+Remember, your F-value is a ratio with the numerator being the variance explained by the effect of interest (e.g. the two-way interaction) and the denominator being variance 'explained' by your residual (that is, variance NOT explained by your model. 
+
+So you can see the variance explained by the two-way interaction in the drop1() command (the Mean Sq number) 
+And you can see the residual variance in the summary of your model
+
+If you divide the two, you get your F-value! 
+```{r}
+drop1(mod1) # Mean sum of squares is 24.99
+summary(mod1) # Residual variance is 19.912
+
+24.99/19.912 #this number matches your F-value!
+```
+
+
+Now, given that our two-way interaction is not significant, we can look at each of the main effects in turn 
+
+```{r}
+mod1a <- lmer(Richness ~ factor(Eutroph) + Depth + (1|Lake), REML = F, data = lakes)
+drop1(mod1a)
+```
+
+
+### Final model
+
+Great, so now we know the F-values and p-values for each of our terms. These we will report in our final table of results
+
+But we should always get our parameter estimates from a model that was run using REML (we used ML for the fixed effect tests remember)
+
+You can just delete the REML command altogether if you want, as the default is T
+
+```{r}
+mod.final <- lmer(Richness ~ factor(Eutroph)*Depth + (1|Lake), REML = T, data = lakes)
+summary(mod.final) # get your parameter estimates/coefficients here
+
+```
+
+
+### Bonus plotting code: 
+
+Here is some starter code that you can use to plot your raw data with your parameter estimates. I'm not going to plot the two-way interaction since we saw that it was non-significant.
+
+What do you think? Are these parameter estimates describing our raw data well?
+
+
+```{r}
+
+mod.intercept <- lmer(Richness ~  factor(Eutroph) + Depth + (1|Lake), REML = T, data = lakes)
+
+ggplot(lakes, aes(x = Depth, y = Richness)) +
+  geom_point(size = 2, aes(color = factor(Lake))) +
+  geom_abline(intercept = fixef(mod.intercept)[1], 
+              slope = fixef(mod.intercept)[3], 
+              color = "blue") +
+  geom_abline(intercept = fixef(mod.intercept)[1] + fixef(mod.intercept)[2], 
+              slope = fixef(mod.intercept)[3], 
+              color = "red")
+  xlim(c(0, 4.5)) +
+  theme_classic()
+```
+
+
+
+### > plotting random intercepts
+
+you can extract the intercepts for each lake too, if you want using ranef(mod.intercept)$Lake. Remember these are DIFFERENCES in intercepts from each lake's predicted intercept (based on their Eutroph level)
+
+However, I've actually struggled to find an efficient way to plot the random effects (intercepts of lake) in relation to the different levels of Eutroph. Each lake has a different eutroph level and so their ranef() is in reference to THAT eutroph level. There is definitely a way to brute force this (just add each lake's ranef to the intercept of *its* eutroph level) but it seems there should be a more automatic way of doing this by extracting some random effects matrix. But after poking around on stack overflow for while, I found a post where Ben Bolker said that apparently our  models do not even store a random effects matrix. 
+
+SO bottom line - if you want to plot the random intercepts of lakes in reference to their Eutroph level, you just gotta do it "by hand" (or you need to be a savvier coder than me). 
+
+But I included this code just so you have some more 'starter' code to play around with for plotting things. 
+
+```{r}
+# want to extract estimates for random effects from mixed model
+mod.intercept <- lmer(Richness ~ factor(Eutroph) + Depth + (1|Lake), REML = T, data = lakes)
+grand <- fixef(mod.intercept)[1]
+lake.inter <- unlist(unname(ranef(mod.intercept)$Lake )) + grand
+slope <- fixef(mod.intercept)[3]
+
+
+ggplot(lakes, aes(x = Depth, y = Richness)) +
+  geom_point(size = 3, aes(color = factor(Lake))) +
+  geom_abline(intercept = fixef(mod.intercept)[1], slope = fixef(mod.intercept)[3], color = "blue") +
+  geom_abline(intercept = lake.inter, slope = slope, color = "gray") +
+  xlim(c(0, 4.5)) +
+  theme_classic()
+```
+
+
+
+
+
+
+
+
+## DATA EXPLORATION
+
+### clams dataset
+
+The goal of data exploration is to make yourself aware of potential problems in the dataset. 
+
+If you did an experiment - THIS IS NOT THE PLACE TO DEVELOP HYPOTHESES! You CANNOT test a hypothesis on the same dataset that generated it!
+
+There are so many different ways to graph your data in R. You just need to figure out which graphs you like most. 
+Zuur et al. "A protocol for data exploration to avoid common statistical problems" also has a supplemental R file associated with it that you can download to get more ideas for different ways to code different graphs
+
+hist() produces histograms; dotcharts just show the value for your variable along the x axis. The y-axis is meaningless - it's just the datarow, so any patterns you see moving up and down the y-axis are just a result of however you entered your data and you shouldn' really interpret that. You're mainly just looking for the spread in your response variable (can also do this for your predictors too).
+
+```{r}
+
+head(clams)
+str(clams)
+
+hist(clams$AFD)
+dotchart(clams$AFD)
+
+hist(clams$LENGTH)
+dotchart(clams$LENGTH)
+
+```
+
+Also nice to plot your response accorrding to your predictors. 
+
+The pairs plot is really nice because it lets you draw lots of scatterplots at once (the clams dataset doesn't have too many variables where the pairs plot is super useful, but it can be quite nice with other datasets with lots of continuous variables)
+
+The [,2:5] on the pairs plot is telling R to only graph the 2nd through 5th columns of data. 
+
+Subsetting wtih [] always follows the format [rows,columns] so that is why you need the , in front of 2:5 so R knows to pull the colums. If you're not used to subsetting in R, you could play around this to see what happens when you ask R to plot different columns, or rows even!
+
+```{r}
+boxplot(clams$AFD ~ clams$MONTH)
+pairs(clams[,2:5])
+```
+
+I am just used to using ggplot at this point, so that is what I do most of my complex graphs in. This is a nice way to facet your data across some grouping variable (I'm just giving you this code as a starting point in case you also like using ggplot)
+
+```{r}
+plot <- ggplot(clams, aes(x = LENGTH, y = AFD)) +
+  geom_point() +
+  facet_grid(. ~ MONTH)
+plot
+
+```
+
+Something else I learned relatively recently is that it is a good idea to sort your data - this lets you see what your smallest values are/what your largest values are and whether you have any duplicates (do you expect to have any duplicates?)
+
+I know how to do most of my data tidying in the tidyverse now, so this command below is using what is called the "pipe" which is the %>%. If you know how to do these things in base R, that's totally okay too. 
+
+```{r}
+
+clams %>%
+  arrange(desc(AFD))
+
+```
+### Loyn dataset
+
+This dataset is looking at bird abundance across a series of forest patches - how do different features of the forest affect bird abundance. This is more of an exploratory dataset as the researchers did not have a hypothesis but rather wanted to build a new management protocol to implement in the future. 
+
+SITE = forest site
+ABUND = bird abundance (response variable)
+AREA = size of patch in sq km
+DIST = distance to next closest forest patch 
+LDIST = distance to the next largest forest patch
+YR.ISOL = year of isolation (when did the forest patch get fragmented)
+GRAZE = what is the level of grazing by herbivores
+ALT = Altitude
+
+```{r}
+loyn <- read.table("Loyn.txt", header = T)
+
+head(loyn)
+str(loyn)
+
+```
+
+Typical initial plots to do. Basically here you're just looking to make sure you have good spread in your response variable. It's also useful to see the spread of your predictors given that this is an observational study - so were you able to sample across a good gradient of areas, distances, etc? If not, then this may influence how well your model can estimate the parameter estimates of those predictors. 
+
+```{r}
+hist(loyn$ABUND)
+dotchart(loyn$ABUND)
+
+```
+
+
+
+```{r}
+dotchart(loyn$ABUND)
+dotchart(loyn$AREA) # hmm what's going on here? most patches very small, just a few very big. If this creates problems in your model you could consider log10 the AREA to pull these values closer together
+dotchart(loyn$DIST) # got one really far away patch apparently, that might be trouble later
+dotchart(loyn$LDIST)
+dotchart(loyn$ALT)
+```
+```{r}
+pairs(loyn[,c("ABUND", "AREA", "DIST", "LDIST", "ALT")], col = factor(loyn$GRAZE))
+```
+
+The table command here is nice because it'll tell you how many observations you have per level of some categorical predictor
+
+```{r}
+boxplot(loyn$ABUND ~ loyn$GRAZE)
+table(loyn$GRAZE)
+```
+
+### lake dataset
+
+now just to see if you remember which plots to use, go ahead and do some dataset exploration on the lake dataset
+
+```{r}
+# write your code here!
+```
+
