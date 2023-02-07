@@ -1,0 +1,87 @@
+---
+title: "Lab 5_begging owls"
+author: "K Laskowski"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Metabolic rates in fish
+
+ID: fish ID (each fish was measured at all three test temps in random order)
+MR: resting metabolic rate 
+test.temp: test temperature at which MR was measured (three levels)
+food.ration: food treatment received throughout early life
+sex: male or female fish
+TL: total length of the animal 
+
+
+```{r}
+metab <- read.csv("metabolic rates.csv")
+head(metab)
+str(metab)
+
+```
+
+First, explore your data a bit. The response variable we care about is 'MR'
+
+You should be able to use code from Lab 4 to explore this dataset so look at dotcharts, histograms, plot the response according to the different predictors , etc
+
+I'm also providing some code for ggplot that is nice to use when you want to look at interactions (ie. data across different subsets of your data). 
+```{r}
+# write your own code here! (use code from Lab 4)
+
+ggplot(metab, aes(x = test.temp, y = MR, color = food.ration)) +
+  geom_point() + 
+  facet_grid(.~ sex)
+
+
+
+```
+
+First test the random effect 
+
+So write out the full model (including all the fixed effects of interest) and then test the significance of the random effect using the apppropriate test
+
+(You should write down the appropriate LRT or F-test (and associated df and p-values) for each term - these are what you will report for the 'overall' significance of each term in your final table)
+
+```{r}
+
+# write full model here, make sure to use REML
+
+```
+
+
+Now to the fixed effects. Re-run our model with ML. Because this was a planned experiment, you are inherently interested in all the effects (and interactions) so think about how this should affect what you report. Test the significance of all the effects that you can. 
+
+```{r}
+# re-write model here, make sure to use ML
+
+```
+
+Posthoc testing. 
+
+Remember, we are interested in how food ration affects MR at these different temperatures so it makes sense to look within a particular sex at a given test temperature do the high and low food ration fish show different MRs? 
+
+Here is some example code to get you started. You can use this, but I also recommend playing around with it to get a feel for the different contrasts you can use. 
+the emmeans vignette has oodles of info: https://cran.r-project.org/web/packages/emmeans/vignettes/comparisons.html 
+
+The emmeans vignette (above) has tons of info, but a more easier to digest tutorial can be found here: https://aosmith.rbind.io/2019/03/25/getting-started-with-emmeans/ 
+
+```{r}
+
+#emmeans(mod, pairwise ~ food.ration|test.temp|sex, lmer.df = "satterthwaite")
+
+```
+
+
+Now in order to get the actual parameter estimates (and s.e. and t-values) for your table, you need to re-run your model using REML. Here you have to decide what terms (predictors) you want to report in your paper (and you'll need to justify why you did what you did in your methods)
+
+```{r}
+# write final model here and make sure to run with REML
+```
+
+
